@@ -295,6 +295,10 @@ class Board(object):
 
         return out
 
+    def mock(self, list_of_moves):
+        for move in list_of_moves:
+            self.apply_move(move)
+
     def play(self, time_limit=TIME_LIMIT_MILLIS):
         """Execute a match between the players by alternately soliciting them
         to select a move and applying it in the game.

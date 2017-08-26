@@ -3,12 +3,16 @@ test your agent's strength against a set of known agents using tournament.py
 and include the results in your report.
 """
 import random
+import math
 
 
 class SearchTimeout(Exception):
     """Subclass base exception for code clarity. """
     pass
 
+def cross_product(list_1, list_2):
+    z = zip(list_1, list_2)
+    return sum( x * y for x, y in z)
 
 def custom_score(game, player):
     """Calculate the heuristic value of a game state from the point of view
@@ -34,8 +38,11 @@ def custom_score(game, player):
     float
         The heuristic value of the current game state to the specified player.
     """
-    # TODO: finish this function!
-    raise NotImplementedError
+    alpha = 1
+    fn_1 = len(game.get_legal_moves(player))
+    beta = -1
+    fn_2 = len(game.get_legal_moves(game.get_opponent(player)))
+    return float(cross_product([alpha, beta], [fn_1, fn_2]))
 
 
 def custom_score_2(game, player):
@@ -62,9 +69,14 @@ def custom_score_2(game, player):
     float
         The heuristic value of the current game state to the specified player.
     """
-    # TODO: finish this function!
-    raise NotImplementedError
-
+    alpha = 0
+    fn_1 = len(game.get_legal_moves(player))
+    beta = 0
+    fn_2 = len(game.get_legal_moves(game.get_opponent(player)))
+    gamma = 1
+    # how close player's move is to center_distance
+    fn_3 = math.sqrt(pow(game.get_player_location(player)[0] - game.width/2 , 2) + pow(game.get_player_location(player)[1] - game.height/2 , 2))
+    return float(cross_product([alpha, beta, gamma], [fn_1, fn_2, fn_3]))
 
 def custom_score_3(game, player):
     """Calculate the heuristic value of a game state from the point of view
@@ -88,8 +100,14 @@ def custom_score_3(game, player):
     float
         The heuristic value of the current game state to the specified player.
     """
-    # TODO: finish this function!
-    raise NotImplementedError
+    alpha = 100
+    my_moves = len(game.get_legal_moves(player)) / 8.
+    fn_1 = math.log( my_moves if my_moves != 0 else 1 ,10)
+    beta = 140
+    opponent_moves = len(game.get_legal_moves(game.get_opponent(player))) / 8.
+    fn_2 = math.log( 1 / opponent_moves if opponent_moves != 0 else 1 , 10)
+    return float(cross_product([alpha, beta], [fn_1, fn_2]))
+
 
 
 class IsolationPlayer:
@@ -167,7 +185,7 @@ class MinimaxPlayer(IsolationPlayer):
             return self.minimax(game, self.search_depth)
 
         except SearchTimeout:
-            pass  # Handle any actions required after timeout as needed
+            raise RuntimeError("Spent too much time thinking!")
 
         # Return the best move from the last completed search iteration
         return best_move
@@ -214,8 +232,53 @@ class MinimaxPlayer(IsolationPlayer):
         if self.time_left() < self.TIMER_THRESHOLD:
             raise SearchTimeout()
 
-        # TODO: finish this function!
-        raise NotImplementedError
+        best_move = (-1, -1)
+        if len(game.get_legal_moves()) == 0:
+            return best_move
+        elif len(game.get_legal_moves()) == 1:
+            return game.get_legal_moves()[0]
+
+        utility_value = float("-inf")
+        # get the maximum utility value from all the moves
+        for move in game.get_legal_moves():
+            try:
+                val = self.min_value(game.forecast_move(move), depth-1)
+                if val > utility_value:
+                    best_move = move
+                    utility_value = max(val, utility_value)
+            except SearchTimeout:
+                return best_move
+
+        best_move = game.get_legal_moves()[0] if best_move == (-1, -1) else best_move
+        return best_move
+
+    def max_value(self, game, depth):
+        if self.time_left() < self.TIMER_THRESHOLD:
+            raise SearchTimeout()
+        # terminal state
+        if depth == 0:# or len(game.get_legal_moves()) == 0:
+            return self.score(game, game.active_player)
+        else:
+            value = float("-inf")
+            for move in game.get_legal_moves():
+                # get the maximum utility value from all the possible moves since the current player's move
+                value = max(value, self.min_value(game.forecast_move(move), depth-1))
+
+            return value
+
+    def min_value(self, game, depth):
+        if self.time_left() < self.TIMER_THRESHOLD:
+            raise SearchTimeout()
+        # terminal state
+        if depth == 0:# or len(game.get_legal_moves()) == 0:
+            return self.score(game, game.inactive_player)
+        else:
+            value = float("inf")
+            for move in game.get_legal_moves():
+                # get the minimum utility value from all the possible moves since its opponent's move
+                value= min(value, self.max_value(game.forecast_move(move), depth-1))
+
+            return value
 
 
 class AlphaBetaPlayer(IsolationPlayer):
@@ -256,8 +319,37 @@ class AlphaBetaPlayer(IsolationPlayer):
         """
         self.time_left = time_left
 
-        # TODO: finish this function!
-        raise NotImplementedError
+        # return fast if there are no choices of legal moves
+        if len(game.get_legal_moves()) == 0:
+            return (-1, -1)
+        elif len(game.get_legal_moves()) == 1:
+            return game.get_legal_moves()[0]
+
+        best_move = (-1, -1)
+        x = game.get_legal_moves()
+        try:
+            # if there are not enough legal moves, start with depth 2 to prevent searching too deep at the beginning
+            depth = 2 if len(game.get_legal_moves()) < 2 * self.search_depth else self.search_depth
+
+            time_spent = prev_time_spent =  0
+            time_ratio = 2
+            while time_left() > 0 and time_left() > time_spent * time_ratio and depth <= len(game.get_blank_spaces()) :
+                before = time_left()
+                prev_best_move = best_move
+                calculated_move = self.alphabeta(game, depth)
+                # never discard the current best move ever!
+                best_move = calculated_move if calculated_move != (-1, -1) else best_move
+                prev_time_spent = time_spent
+                time_spent = before - time_left()
+                time_ratio = (time_spent - prev_time_spent) / prev_time_spent if prev_time_spent != 0 else time_ratio
+                depth += 1
+
+        except SearchTimeout:
+            return best_move
+
+        # Return the best move from the last completed search iteration
+        best_move = game.get_legal_moves()[0] if best_move == (-1, -1) else best_move
+        return best_move
 
     def alphabeta(self, game, depth, alpha=float("-inf"), beta=float("inf")):
         """Implement depth-limited minimax search with alpha-beta pruning as
@@ -307,5 +399,77 @@ class AlphaBetaPlayer(IsolationPlayer):
         if self.time_left() < self.TIMER_THRESHOLD:
             raise SearchTimeout()
 
-        # TODO: finish this function!
-        raise NotImplementedError
+        best_move = (-1, -1)
+        if len(game.get_legal_moves()) == 0:
+            return best_move
+        elif len(game.get_legal_moves()) == 1:
+            return game.get_legal_moves()[0]
+
+        utility_value = float("-inf")
+        # return move after finding the move which returns the highest utility value
+        for move in game.get_legal_moves():
+            try:
+                val, alpha, beta = self.min_value(game.forecast_move(move), depth-1, alpha, beta)
+                #print("move %s with value %s utility_value %s and blank: %s" % ( move, val, utility_value, game.get_blank_spaces()) )
+                if val > utility_value:
+                    #print("move %s with value %s" % ( move, val) )
+                    best_move = move
+                    utility_value = val
+            # if timer expires, return the best so far
+            except SearchTimeout:
+                return best_move
+
+        best_move = game.get_legal_moves()[0] if best_move == (-1, -1) else best_move
+        return best_move
+
+    # simulate the max node in the min max search
+    def max_value(self, game, depth, alpha, beta):
+        if self.time_left() < self.TIMER_THRESHOLD:
+            raise SearchTimeout()
+
+        # terminal state
+        if depth == 0:
+            return self.score(game, game.active_player), alpha, beta
+        elif len(game.get_legal_moves()) == 0:
+            self.score(game, game.active_player)
+            return float("-inf"), alpha, beta
+        else:
+            value = float("-inf")
+            this_alpha, this_beta = alpha, beta
+
+            for move in game.get_legal_moves():
+                res, this_alpha, this_beta = self.min_value(game.forecast_move(move), depth-1, this_alpha, this_beta)
+                # if the current utility value is higher than upper bound overall, we can ignore the rest of the nodes
+                if res >= beta:
+                    return res, alpha, beta
+                # computer max value
+                value = max(value, res)
+
+            # adjust the upper bound
+            return value, alpha, min(beta, value)
+
+    # simulate the min node in the min max search
+    def min_value(self, game, depth, alpha, beta):
+        if self.time_left() < self.TIMER_THRESHOLD:
+            raise SearchTimeout()
+
+        # terminal state
+        if depth == 0:#
+            return self.score(game, game.inactive_player), alpha, beta
+        elif len(game.get_legal_moves()) == 0:
+            self.score(game, game.inactive_player)
+            return float("inf"), alpha, beta
+        else:
+            value = float("inf")
+            this_alpha, this_beta = alpha, beta
+
+            for move in game.get_legal_moves():
+                res, this_alpha, this_beta = self.max_value(game.forecast_move(move), depth-1, this_alpha, this_beta)
+                # if the current utility value is lower than lower bound overall, we can ignore the rest of the nodes
+                if res <= alpha:
+                    return res, alpha, beta
+                # computer min value
+                value = min(value, res)
+
+            # adjust the lower bound
+            return value, max(value,alpha), beta
